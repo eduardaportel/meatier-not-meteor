@@ -24,7 +24,7 @@ class Rentry_analysis:
         orbital_dict = data["orbital_data"]
         diameter_dict = data["estimated_diameter"]["meters"]
         return orbital_dict, diameter_dict
-    
+
     def earth_WGS84_ECEF(self):
         phi = np.linspace(-PI/2, PI/2, 200)   # latitude
         lam = np.linspace(-PI, PI, 200)       # longitude
@@ -47,7 +47,7 @@ class Rentry_analysis:
                 raise RuntimeError(f"SGP4 error code {e}")
             sat_positions.append(r)
         return np.array(sat_positions)
-    
+
     def keplerian_to_RV(self, body, orbital_dict):
         epoch = Time(orbital_dict["orbit_determination_date"], scale="tdb")
         ecc   = float(orbital_dict["eccentricity"])
@@ -68,7 +68,7 @@ class Rentry_analysis:
         )
         r, v = orb.rv()
         return epoch, r.to_value(u.km), v.to_value(u.km / u.s)
-    
+
     def RV_to_keplerian(self, body, epoch, r, v):
         orb = Orbit.from_vectors(body, r * u.km, v * u.km/u.s, epoch=epoch)
         a    = orb.a.to(u.AU)
