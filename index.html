@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbital & Impact Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="ui-container">
+        <h1>Space Simulator</h1>
+        <button id="toggle-button">Switch to 2D Impact View</button>
+    </div>
+
+    <div id="three-container" class="simulation-container"></div>
+
+    <div id="d3-container" class="simulation-container" style="display: none;"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <script type="module" src="main.js"></script>
+</body>
+</html>
