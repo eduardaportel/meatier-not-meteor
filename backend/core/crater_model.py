@@ -15,5 +15,6 @@ def estimate_earthquake_magnitude(energy_megatons):
     Converte energia de impacto em magnitude sísmica equivalente (Mw).
     """
     energy_joules = energy_megatons * 4.184e15
-    magnitude = (2/3) * (math.log10(energy_joules) - 4.8)
+    seismic_energy = energy_joules * 10**-4 
+    magnitude = (2/3) * (math.log10(seismic_energy) - 4.8)
     return magnitude
