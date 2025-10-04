@@ -7,6 +7,7 @@ load_dotenv()
 
 # API Keys
 NASA_API_KEY = os.getenv("NASA_API_KEY", "DEMO_KEY")
+duda_api_key = 'o9eX4otm7mdz9oSxXmlE5pTJG63QS4uy2cGCpyo2'
 
 # Base URLs
 NASA_BASE_URL = "https://api.nasa.gov"
