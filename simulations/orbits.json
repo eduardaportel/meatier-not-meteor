@@ -1,0 +1,113 @@
+{
+  "links": {
+    "self": "http://api.nasa.gov/neo/rest/v1/neo/3542519?api_key=DEMO_KEY"
+  },
+  "id": "3542519",
+  "neo_reference_id": "3542519",
+  "name": "(2010 PK9)",
+  "designation": "2010 PK9",
+  "nasa_jpl_url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr=3542519",
+  "absolute_magnitude_h": 21.81,
+  "estimated_diameter": {
+    "kilometers": {
+      "estimated_diameter_min": 0.1154928176,
+      "estimated_diameter_max": 0.258249791
+    },
+    "meters": {
+      "estimated_diameter_min": 115.4928175848,
+      "estimated_diameter_max": 258.2497910326
+    },
+    "miles": {
+      "estimated_diameter_min": 0.0717638876,
+      "estimated_diameter_max": 0.1604689309
+    },
+    "feet": {
+      "estimated_diameter_min": 378.9134556449,
+      "estimated_diameter_max": 847.2762444114
+    }
+  },
+  "is_potentially_hazardous_asteroid": true,
+  "close_approach_data": [
+    {
+      "close_approach_date": "1903-09-02",
+      "close_approach_date_full": "1903-Sep-02 16:26",
+      "epoch_date_close_approach": -2093240040000,
+      "relative_velocity": {
+        "kilometers_per_second": "20.7057263268",
+        "kilometers_per_hour": "74540.614776588",
+        "miles_per_hour": "46316.639220486"
+      },
+      "miss_distance": {
+        "astronomical": "0.1920470272",
+        "lunar": "74.7062935808",
+        "kilometers": "28729826.208952064",
+        "miles": "17851886.2032799232"
+      },
+      "orbiting_body": "Earth"
+    },
+    {
+      "close_approach_date": "1904-07-26",
+      "close_approach_date_full": "1904-Jul-26 08:05",
+      "epoch_date_close_approach": -2064930900000,
+      "relative_velocity": {
+        "kilometers_per_second": "15.8485675157",
+        "kilometers_per_hour": "57054.8430565697",
+        "miles_per_hour": "35451.6606759002"
+      },
+      "miss_distance": {
+        "astronomical": "0.0426608717",
+        "lunar": "16.5950790913",
+        "kilometers": "6381975.538663279",
+        "miles": "3965575.7135360902"
+      },
+      "orbiting_body": "Earth"
+    },
+    {
+      "close_approach_date": "1907-04-13",
+      "close_approach_date_full": "1907-Apr-13 18:18",
+      "epoch_date_close_approach": -1979271720000,
+      "relative_velocity": {
+        "kilometers_per_second": "30.3958592282",
+        "kilometers_per_hour": "109425.0932215952",
+        "miles_per_hour": "67992.4975076073"
+      },
+      "miss_distance": {
+        "astronomical": "0.1169732796",
+        "lunar": "45.5026057644",
+        "kilometers": "17498953.475074452",
+        "miles": "10873345.4856813576"
+      },
+      "orbiting_body": "Venus"
+    }
+  ],
+  "orbital_data": {
+    "orbit_id": "30",
+    "orbit_determination_date": "2023-08-23 05:49:41",
+    "first_observation_date": "2010-07-18",
+    "last_observation_date": "2023-08-22",
+    "data_arc_in_days": 4783,
+    "observations_used": 123,
+    "orbit_uncertainty": "0",
+    "minimum_orbit_intersection": ".015471",
+    "jupiter_tisserand_invariant": "8.149",
+    "epoch_osculation": "2461000.5",
+    "eccentricity": ".6758634748619897",
+    "semi_major_axis": ".6820876828531942",
+    "inclination": "12.58732502214531",
+    "ascending_node_longitude": "306.5059266984936",
+    "orbital_period": "205.7589511904334",
+    "perihelion_distance": ".2210895313594716",
+    "perihelion_argument": "195.6472531921637",
+    "aphelion_distance": "1.143085834346917",
+    "perihelion_time": "2461095.161471429415",
+    "mean_anomaly": "194.3783853998682",
+    "mean_motion": "1.749620115757753",
+    "equinox": "J2000",
+    "orbit_class": {
+      "orbit_class_type": "ATE",
+      "orbit_class_description": "Near-Earth asteroid orbits similar to that of 2062 Aten",
+      "orbit_class_range": "a (semi-major axis) \u003C 1.0 AU; q (perihelion) \u003E 0.983 AU"
+    }
+  },
+  "is_sentry_object":false
+}
