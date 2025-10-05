@@ -30,22 +30,19 @@ class Rentry_analysis:
     def readData_from_json_NEO(self, path):
        
         with open(path, "r") as file:
-       
-            data = json.load(file)  
-       
+            data = json.load(file)
         orbital_dict = data["orbital_data"]
        
         diameter_dict = data["estimated_diameter"]["meters"]
        
         return orbital_dict, diameter_dict
-    
+
     def earth_WGS84_ECEF(self):
        
         phi = np.linspace(-PI/2, PI/2, 200)   # latitude
         lam = np.linspace(-PI, PI, 200)       # longitude
         phi, lam = np.meshgrid(phi, lam)
-        
-        h = np.full_like(phi, 0.0)  
+        h = np.full_like(phi, 0.0)
         N = self.a / np.sqrt(1 - self.e2 * np.sin(phi)**2)
         
         X = (N + h) * np.cos(phi) * np.cos(lam) / 1e3
@@ -54,8 +51,10 @@ class Rentry_analysis:
         
         return X, Y, Z
 
-    def propagate_TLE(self, minutes, orbit_dict, step):
-       
+    def propagate_TLE(self, tle_line1, tle_line2, minutes=3600, step=0.5):
+        satellite = Satrec.twoline2rv(tle_line1, tle_line2)
+        jd, fr = jday(2025, 10, 4, 0, 0, 0.0)
+        times = np.arange(0, minutes, step)
         sat_positions = []
         sat_velocity = []
         altitudes = []
@@ -67,122 +66,12 @@ class Rentry_analysis:
         diameter = self.diameter
 
         for t in times:
-            tle_line1, tle_line2 = self.write_tle_from_elements(99999, orbit_dict, diameter)
+            e, r, v = satellite.sgp4(jd, fr + t/1440.0)
+            if e != 0:
+                raise RuntimeError(f"SGP4 error code {e}")
+            sat_positions.append(r)
+        return np.array(sat_positions)
 
-            # Get the epoch string from TLE line 1 (positions 18–32)
-            tle_epoch_str = tle_line1[18:32].strip()  
-            
-            year_short = int(tle_epoch_str[:2])
-            
-            doy = float(tle_epoch_str[2:])
-            
-            year_full = 2000 + year_short if year_short < 57 else 1900 + year_short
-            
-            epoch_datetime = datetime(year_full, 1, 1) + timedelta(days=doy - 1)
-
-            jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
-                          epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
-
-            satellite = Satrec.twoline2rv(tle_line1, tle_line2)
-            
-            e, r, v = satellite.sgp4(jd, fr + t / 1440.0)
-
-            r_norm = np.linalg.norm(r)
-            
-            print(f"Altitude {r_norm - 6378}")
-
-            if r_norm - 6378 > diameter/2 and reentry_flag == True:
-
-                r_reentry, v_reentry = self.reentry_calculation(r, v, diameter, times)
-        
-                sat_positions.append(r_reentry.flatten())
-        
-                sat_velocity.append(v_reentry.flatten())
-                break
-
-            if e == 0 and r_norm - 6378 > 250:
-                sat_positions.append(r)
-                
-                sat_velocity.append(v)
-                
-                altitudes.append(r_norm - 6378)
-                
-                reentry_flag = False
-            else:
-                print(f"SGP4 error code {e} at t = {t} min")
-                print("Switching to reentry integration (solve_ivp)...")
-
-                # Perform reentry trajectory integration using IVP
-                t_reentry, y_reentry = self.reentry_calculation(r, v, t_span=(t, minutes))
-
-                for x, y, z, vx, vy, vz in y_reentry:
-                    sat_positions.append([x, y, z])
-                    sat_velocity.append([vx, vy, vz])
-                    altitudes.append(np.linalg.norm([x, y, z]) - 6378)               
-                break
-
-        return np.array(sat_positions), np.array(sat_velocity), altitudes
-                
-    def reentry_ivp(self, t, y, diameter):
-       
-        r = y[:3]   # km
-        v = y[3:]   # km/s
-
-        r = np.array(r)
-        v = np.array(v)
-        r_norm = np.linalg.norm(r)
-
-        altitude = r_norm - 6378
-        a_g = -self.Mu * r / (r_norm**3)
-
-        Bstar_drag, Ballistic_coef = self.atmospheric_geo_drag(
-            diameter=diameter, rho_body=self.rho_body, altitude=altitude
-        )
-
-        wEarth = np.array([0, 0, 7.2921159*1e-5])
-        vrel = np.array(v - np.cross(wEarth, r))
-        vrel_norm = np.linalg.norm(vrel)
-
-        a_drag = -0.5 * Bstar_drag * vrel_norm * vrel      
-        a_reentry = a_g + a_drag
-        v_reentry = v
-
-        return np.hstack((v_reentry, a_reentry))
-
-    def reentry_trigger(self, t, y):
-            r_norm = np.linalg.norm(y[:3])
-            return r_norm - 6378 - self.diameter/2
-    
-    def get_reentry_event(self):
-        
-        def event(t, y):
-            return self.reentry_trigger(t, y)
-
-        event.terminal = True
-
-        event.direction = -1
-
-        return event
-
-    def reentry_calculation(self, r0, v0, t_span):
-        
-        t_span = (t_span[0], t_span[-1])
-
-        y0 = np.hstack((r0, v0))
-
-        sol = solve_ivp(
-            fun=lambda t, y: self.reentry_ivp(t, y, self.diameter),
-            t_span=t_span,
-            y0=y0,
-            method="RK45",
-            max_step=10,
-            events=self.get_reentry_event(),
-            rtol=1e-4,
-            atol=1e-4
-        )
-        
-        return sol.t, sol.y.T
-    
     def keplerian_to_RV(self, body, orbital_dict):
         
         epoch = Time(orbital_dict["orbit_determination_date"], scale="tdb")
@@ -213,7 +102,7 @@ class Rentry_analysis:
         r, v = orb.rv()
         
         return epoch, r.to_value(u.km), v.to_value(u.km / u.s)
-    
+
     def RV_to_keplerian(self, body, epoch, r, v):
         
         orb = Orbit.from_vectors(body, r * u.km, v * u.km/u.s, epoch=epoch)
