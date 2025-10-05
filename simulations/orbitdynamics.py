@@ -22,6 +22,12 @@ class Rentry_analysis:
         
         self.b = 6356752.3142  # WGS84 semi-minor axis [m]
 
+        self.H = 8500
+
+        self.rho0 = 1.225
+
+        self.density_body = 3000
+
     def readData_from_json_NEO(self, path):
         
         with open(path, "r") as file:
@@ -41,7 +47,6 @@ class Rentry_analysis:
         
         phi, lam = np.meshgrid(phi, lam)
         
-        
         h = np.full_like(phi, 0.0)  
         
         N = self.a / np.sqrt(1 - self.e2 * np.sin(phi)**2)
@@ -54,41 +59,59 @@ class Rentry_analysis:
         
         return X, Y, Z
 
-    def propagate_TLE(self, tle_line1, tle_line2, minutes, step):
-
-        # Get the epoch string from TLE line 1 (positions 18–32)
-        tle_epoch_str = tle_line1[18:32].strip()  # e.g. "25001.00000000"
-        year_short = int(tle_epoch_str[:2])
-        doy = float(tle_epoch_str[2:])
-
-        year_full = 2000 + year_short if year_short < 57 else 1900 + year_short
-
-        epoch_datetime = datetime(year_full, 1, 1) + timedelta(days=doy - 1)
-        jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
-                    epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
-
-        satellite = Satrec.twoline2rv(tle_line1, tle_line2)
-        
-        times = np.arange(0, minutes, step)
+    def propagate_TLE(self, minutes, orbit_dict, length_dict, step):
         
         sat_positions = []
         
         altitudes = []
 
+        times = np.arange(0, minutes, step)
+
         for t in times:
+
+            tle_line1, tle_line2 = self.write_tle_from_elements(99999, orbit_dict, length_dict["estimated_diameter_max"])
+
+            # Get the epoch string from TLE line 1 (positions 18–32)
+            tle_epoch_str = tle_line1[18:32].strip()  # e.g. "25001.00000000"
+            
+            year_short = int(tle_epoch_str[:2])
+            
+            doy = float(tle_epoch_str[2:])
+
+            year_full = 2000 + year_short if year_short < 57 else 1900 + year_short
+
+            epoch_datetime = datetime(year_full, 1, 1) + timedelta(days=doy - 1)
+            
+            jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
+                        epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
+
+            satellite = Satrec.twoline2rv(tle_line1, tle_line2)
 
             e, r, v = satellite.sgp4(jd, fr + t / 1440.0)
 
-            if e == 0:
-                sat_positions.append(r)
-                r_norm = np.linalg.norm(r)
-                altitudes.append(r_norm - 6378)
-            else:   
-                reentry_time = t
-                print(f"SGP4 error code {e} at t = {reentry_time} min → Reentrada detectada!")
+            r_norm = np.linalg.norm(r)
+
+            print(f"Altitude {r_norm - 6378}")
+
+            if r_norm - 6378 < 10:
+                print(f"Collision time {t} min")
                 break
 
+            if e == 0:
+                sat_positions.append(r)
+                altitudes.append(r_norm - 6378)
+                reentry_flag = False
+            else:
+                
+                if reentry_flag == False:
+                    reentry_time = t
+                    print(f"SGP4 error code {e} at t = {reentry_time} min")
+            
         return np.array(sat_positions), altitudes
+    
+    def reentry_calculation():
+        
+        return
     
     def keplerian_to_RV(self, body, orbital_dict):
         
@@ -203,40 +226,81 @@ class Rentry_analysis:
         v1 = -np.array(v_rel) + np.array(v2)
         
         return r1, v1
-        
-    def write_tle_from_elements(self, satnum, elements):
-        
-        mean_motion_revs_per_day = elements["mean_motion"] / 360.0  # deg/day -> rev/day
+    
+    def write_tle_from_elements(self, satnum, elements, diameter):
 
-        # Build epoch string in YYDDD.DDDDD format
+        # Convert mean motion from deg/day to rev/day
+        mean_motion_revs_per_day = elements["mean_motion"] / 360.0
+
+        # Epoch in YYDDD.DDDDDDDD format
         epoch_time = Time(elements["epoch"])
         
         year = epoch_time.datetime.year % 100
         
         day_of_year = epoch_time.datetime.timetuple().tm_yday
         
-        frac_of_day = (epoch_time.datetime.hour*3600 + 
-                    epoch_time.datetime.minute*60 + 
-                    epoch_time.datetime.second) / 86400.0
+        frac_of_day = (epoch_time.datetime.hour * 3600 +
+                        epoch_time.datetime.minute * 60 +
+                        epoch_time.datetime.second +
+                        epoch_time.datetime.microsecond / 1e6) / 86400.0
         
         epoch_str = f"{year:02d}{day_of_year + frac_of_day:012.8f}"
 
-        # Line 1 (dummy drag terms etc.)
-        tle_line1 = f"1 {satnum:05d}U 25001A   {epoch_str}  .00000000  00000-0  00000-0 0  9991"
+        # Altitude [km] for drag model
+        altitude_km = elements['semi_major_axis'] - 6378.0  # assumes Earth radius ~6378 km
 
-        # Line 2 (eccentricity is without decimal point in TLE!)
-        ecc_str = f"{elements['eccentricity']:.7f}".split(".")[1][:7]  
+        # Compute B* and ballistic coefficient
+        Bstar, Ballistic = self.atmospheric_geo_drag(diameter, self.density_body, altitude_km)
 
-        tle_line2 = (f"2 {satnum:05d} "
-                    f"{elements['inclination']:8.4f} "
-                    f"{elements['ascending_node_longitude']:8.4f} "
-                    f"{ecc_str:7s} "
-                    f"{elements['argument_of_periapsis']:8.4f} "
-                    f"{elements['mean_anomaly']:8.4f} "
-                    f"{mean_motion_revs_per_day:11.8f}00001")
+        # Convert B* to TLE format (decimal + exponent)
+        # TLE expects B* in form ±0.XXXXX±X, e.g., "34156-4" for 3.4156e-4
+        bstar_str = f"{Bstar:.5e}".replace("e", "").replace("+", "").zfill(8)
+        bstar_tle = f"{bstar_str[0:5]}{bstar_str[5]}{bstar_str[6]}"
+
+        # Eccentricity with no decimal point
+        ecc_str = f"{elements['eccentricity']:.7f}".split(".")[1][:7]
+
+        # Build TLE lines
+        tle_line1 = (
+            f"1 {satnum:05d}U 25001A   {epoch_str}  "
+            f".00000000  00000-0 {bstar_tle} 0  9991"
+        )
+
+        tle_line2 = (
+            f"2 {satnum:05d} "
+            f"{elements['inclination']:8.4f} "
+            f"{elements['ascending_node_longitude']:8.4f} "
+            f"{ecc_str:7s} "
+            f"{elements['argument_of_periapsis']:8.4f} "
+            f"{elements['mean_anomaly']:8.4f} "
+            f"{mean_motion_revs_per_day:11.8f}00001"
+        )
 
         return tle_line1, tle_line2
 
+    def atmospheric_geo_drag(self, diameter, rho_body, altitude):
+
+        radius = diameter/2
+
+        Volume = 4*PI/3 * radius**3
+
+        Area = PI*radius**2
+
+        mass = rho_body* Volume
+
+        Cd = 0.7
+
+        Balllistic_coef = mass/(Cd*Area)
+
+        rho = self.rho0 * np.exp(-altitude/self.H)
+
+        Bstar_drag = rho * Cd * Area/mass
+
+        return Bstar_drag, Balllistic_coef
+    
+    def reentry_dynamics():
+
+        
 
 # ------------------------------
 # Usage
@@ -255,23 +319,45 @@ print("Transformed state vector wrt Earth:")
 print("r [km] =", re)
 print("v [km/s] =", ve)
 
-#re = np.array([2.76118303e+04, -1.35428444e+04, -1.29941920e+04])
-#ve = np.array([1.59638675, 2.08307728, 2.46499025])
-
 orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, re, ve)
 
-#tle1 = "1 99999U 25001A   25278.00000000  .00500000  00000-0  50000-3 0  9991"
-#tle2 = "2 99999  97.5000  0.0000 0001000  0.0000  0.0000 15.22000000    01"
+# Position at equator, longitude = 0 (X-axis)
 
-tle1, tle2 = class1.write_tle_from_elements(99999, orbit_dict_earth)
+tle1 = "1 13343U 82092A   82348.50000000  .00035000  00000-0  12000-3 0  9991"
+tle2 = "2 13343  65.0000 150.0000 0005000   0.0000  90.0000 16.00000000    01"
 
-step=100
-duration = 525599.42184*5
-sat_pos, altitudes = class1.propagate_TLE(tle1, tle2, minutes=duration, step=step)
+satellite = Satrec.twoline2rv(tle1, tle2)
+
+tle_epoch_str = tle1[18:32].strip()  # e.g. "25001.00000000"
+
+year_short = int(tle_epoch_str[:2])
+
+doy = float(tle_epoch_str[2:])
+
+year_full = 2000 + year_short if year_short < 57 else 1900 + year_short
+
+epoch_datetime = datetime(year_full, 1, 1) + timedelta(days=doy - 1)
+
+jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
+    epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
+
+e, r, v = satellite.sgp4(jd, fr)
+
+#r = np.array([6378+10, 6378+10, -6378-10]) # [km]
+#v = np.array([2, 5.65, 1.5])  # [km/s]
+
+orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, r, v)
+
+step=0.1
+duration = 63933.0*10
+sat_pos, altitudes = class1.propagate_TLE(minutes=duration, orbit_dict=orbit_dict_earth, length_dict=dia_dict, step=step)
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(8,8))
 
-ax.scatter(X, Y, Z, color="blue", s=200, label="Earth")
+ax.plot_surface(X, Y, Z, rstride=5, cstride=5, color='blue', alpha=0.4, linewidth=0)
+
+ax.scatter(sat_pos[0,0], sat_pos[0,1], sat_pos[0,2], 'g', label="Starting point")
+ax.scatter(sat_pos[-1,0], sat_pos[-1,1], sat_pos[-1,2], 'o', label="Ending point")
 
 ax.plot(sat_pos[:,0], sat_pos[:,1], sat_pos[:,2], 'r', label="Orbit")
 ax.set_xlabel("X [m]"); ax.set_ylabel("Y [m]"); ax.set_zlabel("Z [m]")
@@ -285,7 +371,7 @@ times = np.arange(0, len(altitudes))
 
 plt.plot(times, altitudes)
 plt.axhline(80, color='red', linestyle='--', label="Reentry limit")
-plt.title("Altitude decay over 5 months")
+plt.title(f"Altitude decay over {times[-1]/43800} months")
 plt.xlabel("Time [min]")
 plt.ylabel("Altitude [km]")
 plt.grid(True)
