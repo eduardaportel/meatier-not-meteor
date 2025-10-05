@@ -1,4 +1,12 @@
 #codigo antigo meu
+import os
+import sys
+
+# Ensure local package imports work when running this file directly
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 from core.asteroid_estimations import AsteroidEstimations
 from clients.nasa_client import NASAClient
 
