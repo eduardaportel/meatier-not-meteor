@@ -20,7 +20,7 @@ class Rentry_analysis:
 
     def readData_from_json_NEO(self, path):
         with open(path, "r") as file:
-            data = json.load(file)  
+            data = json.load(file)
         orbital_dict = data["orbital_data"]
         diameter_dict = data["estimated_diameter"]["meters"]
         return orbital_dict, diameter_dict
@@ -29,7 +29,7 @@ class Rentry_analysis:
         phi = np.linspace(-PI/2, PI/2, 200)   # latitude
         lam = np.linspace(-PI, PI, 200)       # longitude
         phi, lam = np.meshgrid(phi, lam)
-        h = np.full_like(phi, 0.0)  
+        h = np.full_like(phi, 0.0)
         N = self.a / np.sqrt(1 - self.e2 * np.sin(phi)**2)
         X = (N + h) * np.cos(phi) * np.cos(lam) / 1e3
         Y = (N + h) * np.cos(phi) * np.sin(lam) / 1e3
@@ -38,8 +38,8 @@ class Rentry_analysis:
 
     def propagate_TLE(self, tle_line1, tle_line2, minutes=3600, step=0.5):
         satellite = Satrec.twoline2rv(tle_line1, tle_line2)
-        jd, fr = jday(2025, 10, 4, 0, 0, 0.0)  
-        times = np.arange(0, minutes, step)  
+        jd, fr = jday(2025, 10, 4, 0, 0, 0.0)
+        times = np.arange(0, minutes, step)
         sat_positions = []
         for t in times:
             e, r, v = satellite.sgp4(jd, fr + t/1440.0)

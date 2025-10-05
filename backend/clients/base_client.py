@@ -48,7 +48,6 @@ class BaseAPIClient:
                 headers=headers,
                 timeout=10 # seconds
             )
-            # print(response.request.url)
             response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
 
         except requests.exceptions.HTTPError as e:
@@ -58,9 +57,8 @@ class BaseAPIClient:
             ) from e
 
         except requests.exceptions.RequestException as e:
-            # For network-related errors (e.g., DNS failure, connection refused)
             raise APIError(status_code=503, message=str(e)) from e
-        # print(response.json())
+        
         return response.json()
 
     def _request_by_url(
@@ -106,13 +104,11 @@ class BaseAPIClient:
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Performs a GET request."""
         r = self._request("GET", endpoint, params=params)
-        # print(r)
         return r
     
     def get_by_url(self, url: str) -> Any:
         """Performs a GET request."""
         r = self._request_by_url("GET", url)
-        # print(r)
         return r
 
     def post(self, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Any:
