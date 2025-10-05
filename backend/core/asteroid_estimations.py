@@ -45,7 +45,7 @@ class AsteroidEstimations:
         return magnitude
 
 # checar oceano ou terra
-    def is_ocean_or_land(lat: float, lon: float):
+    def is_ocean_or_land(self, lat: float, lon: float):
         """
         Uses USGS elevation data to determine whether the point is on land or ocean.
         Returns:
