@@ -21,3 +21,21 @@ class USGSClient(BaseAPIClient):
             "minmagnitude": min_magnitude,
         }
         return self.get(endpoint, params=params)
+
+    def get_elevation(self, lat: float, lon: float, units: str = "Meters") -> float:
+            """
+            Fetches elevation for a given latitude and longitude.
+            Returns elevation in meters (can be negative for ocean floor).
+            """
+            endpoint = "/epqs/pqs.php"
+            params = {
+                "x": lon,
+                "y": lat,
+                "units": units,
+                "output": "json",
+            }
+            data = self.get(endpoint, params=params)
+            try:
+                return data["USGS_Elevation_Point_Query_Service"]["Elevation_Query"]["Elevation"]
+            except (KeyError, TypeError):
+                raise ValueError(f"Unexpected response format from USGS: {data}")
