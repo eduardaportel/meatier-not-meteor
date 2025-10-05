@@ -13,7 +13,7 @@ import json
 
 PI = np.pi
 
-class Rentry_analysis:
+class Reentry_analysis:
     
     def __init__(self):
         self.e2 = 0.00669437999014
@@ -21,7 +21,7 @@ class Rentry_analysis:
         self.b = 6356752.3142  # WGS84 semi-minor axis [m]
         self.Mu = 398600.4418  # [km^3/s^2]
         self.H = 8500
-        self.rho0 = 1.225
+        self.rho0 = 1.225 
         self.rho_body = 3000
         self.diameter = 0
         self.mass = 0
@@ -89,8 +89,6 @@ class Rentry_analysis:
 
             r_norm = np.linalg.norm(r)
             
-            print(f"Altitude {r_norm - 6378}")
-
             if r_norm - 6378 > diameter/2 and reentry_flag == True:
 
                 r_reentry, v_reentry = self.reentry_calculation(r, v, diameter, times)
@@ -150,8 +148,12 @@ class Rentry_analysis:
         return np.hstack((v_reentry, a_reentry))
 
     def reentry_trigger(self, t, y):
-            r_norm = np.linalg.norm(y[:3])
-            return r_norm - 6378 - self.diameter/2
+
+        r_norm = np.linalg.norm(y[:3])  # km
+
+        altitude = r_norm - 6378.0       # km above Earth's mean radius
+
+        return altitude                  # stop at 0 km altitude
     
     def get_reentry_event(self):
         
@@ -175,7 +177,7 @@ class Rentry_analysis:
             t_span=t_span,
             y0=y0,
             method="RK45",
-            max_step=10,
+            max_step=1,
             events=self.get_reentry_event(),
             rtol=1e-4,
             atol=1e-4
@@ -346,14 +348,14 @@ class Rentry_analysis:
         
         radius = diameter/2
 
-        Volume = 4*PI/3 * radius**3
+        volume = 4*PI/3 * radius**3
 
         Area = PI*radius**2
 
-        mass = rho_body * Volume
+        mass = rho_body * volume
 
         self.mass = mass
-        self.volume = Volume
+        self.volume = volume
 
         Cd = 0.7
 
@@ -364,21 +366,42 @@ class Rentry_analysis:
         Bstar_drag = rho * Cd * Area / mass
 
         return Bstar_drag, Balllistic_coef
+    
+    def sutton_graves_heat_flux(self, altitude, velocity, nose_radius):
+
+        k = 1.83e-4  # Sutton-Graves constant for Earth [SI units]
+        
+        rho = self.rho0 * np.exp(-altitude/self.H) # Convert km -> m
+
+        velocity_m = velocity * 1e3 # Convert km/s -> m/s
+
+        q_dot = k * np.sqrt(rho / nose_radius) * velocity_m**3
+
+        return q_dot
+    
+    def changing_temperature_air(self, alt, v):
+
+        q_dot = self.sutton_graves_heat_flux( self, alt, v, self.diameter/2 )
+
+        return 
 
 # ------------------------------
 # Usage
 # ------------------------------
-class1 = Rentry_analysis()
+class1 = Reentry_analysis()
 
 path = "C:\\Users\\Claudio Manuel\\Desktop\\prog\\linguagens\\python\\satellite\\NASA\\meatier-not-meteor\\simulations\\orbits.json"
 
 X, Y, Z = class1.earth_WGS84_ECEF()
+
 orbit_dict, dia_dict = class1.readData_from_json_NEO(path)
 
 class1.diameter = dia_dict["estimated_diameter_max"]
 
 epoch, rs, vs = class1.keplerian_to_RV(Sun, orbit_dict)
+
 r_rel, v_rel = class1.relative_reference_frame(Sun, Earth, epoch)
+
 re, ve = class1.change_reference_frame((r_rel, v_rel), (rs, vs))
 
 print("Transformed state vector wrt Earth:")
@@ -387,6 +410,7 @@ print("v [km/s] =", ve)
 
 orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, re, ve)
 
+'''
 tle1 = "1 13343U 82092A   82348.50000000  .00035000  00000-0  12000-3 0  9991"
 tle2 = "2 13343  65.0000 150.0000 0005000   0.0000  90.0000 16.00000000    01"
 
@@ -401,15 +425,19 @@ jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
               epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
 
 e, r, v = satellite.sgp4(jd, fr)
+'''
+
+r = [6378 + 10, 6378 + 10, 0] # km
+v = [1, 7.25, -0.5] # Km/s
+
 orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, r, v)
 
-step = 0.1
+step = 10
 duration = 63933.0 * 10
 sat_pos, sat_vel, altitudes = class1.propagate_TLE(minutes=duration, 
                                             orbit_dict=orbit_dict_earth, 
                                             step=step)
 
-'''
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(8,8))
 ax.plot_surface(X, Y, Z, rstride=5, cstride=5, color='blue', alpha=0.4, linewidth=0)
 ax.scatter(sat_pos[0,0], sat_pos[0,1], sat_pos[0,2], 'g', label="Starting point")
@@ -419,7 +447,6 @@ ax.set_xlabel("X [m]"); ax.set_ylabel("Y [m]"); ax.set_zlabel("Z [m]")
 ax.set_title("SGP4 Orbit around WGS-84 Earth")
 ax.legend()
 plt.show()
-'''
 
 plt.figure(figsize=(10, 5))
 times = np.arange(0, len(altitudes))
