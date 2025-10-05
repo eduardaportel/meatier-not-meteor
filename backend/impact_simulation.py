@@ -38,7 +38,7 @@ def run_impact_simulation(neo_id: str, lat: float, lon: float, distance_km: floa
         initial_wave = estimations.estimate_initial_tsunami_height(avg_depth)
         wave_at_distance = estimations.variable_tsunami_height(initial_wave, transient_r, distance_km)
         wave_at_shore = estimations.shore_tsunami_height(
-            wave_at_distance, average_oceanic_depth=4000, shore_depth=200
+            wave_at_distance, average_oceanic_depth=4000, shore_depth=20
         )
 
         tsunami = {
