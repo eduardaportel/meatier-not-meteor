@@ -27,7 +27,7 @@ class USGSClient(BaseAPIClient):
             Fetches elevation for a given latitude and longitude.
             Returns elevation in meters (can be negative for ocean floor).
             """
-            endpoint = "/epqs/pqs.php"
+            endpoint = "https://nationalmap.gov/epqs/pqs.php"
             params = {
                 "x": lon,
                 "y": lat,
@@ -36,6 +36,11 @@ class USGSClient(BaseAPIClient):
             }
             data = self.get(endpoint, params=params)
             try:
-                return data["USGS_Elevation_Point_Query_Service"]["Elevation_Query"]["Elevation"]
-            except (KeyError, TypeError):
+                service = data.get("USGS_Elevation_Point_Query_Service", {})
+                query = service.get("Elevation_Query") or service.get("Elevation_Queries", [{}])[0]
+                elevation = query.get("Elevation")
+                if elevation is None:
+                    raise ValueError
+                return float(elevation)
+            except Exception:
                 raise ValueError(f"Unexpected response format from USGS: {data}")
