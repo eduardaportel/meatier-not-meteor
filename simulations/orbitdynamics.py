@@ -66,8 +66,10 @@ class Reentry_analysis:
 
         diameter = self.diameter
 
+        velocity = 0.0
+
         for t in times:
-            tle_line1, tle_line2 = self.write_tle_from_elements(99999, orbit_dict, diameter)
+            tle_line1, tle_line2 = self.write_tle_from_elements(99999, orbit_dict, diameter, velocity)
 
             # Get the epoch string from TLE line 1 (positions 18–32)
             tle_epoch_str = tle_line1[18:32].strip()  
@@ -88,17 +90,8 @@ class Reentry_analysis:
             e, r, v = satellite.sgp4(jd, fr + t / 1440.0)
 
             r_norm = np.linalg.norm(r)
-            
-            if r_norm - 6378 > diameter/2 and reentry_flag == True:
 
-                r_reentry, v_reentry = self.reentry_calculation(r, v, diameter, times)
-        
-                sat_positions.append(r_reentry.flatten())
-        
-                sat_velocity.append(v_reentry.flatten())
-                break
-
-            if e == 0 and r_norm - 6378 > 250:
+            if e == 0 and r_norm - 6378 > 80:
                 sat_positions.append(r)
                 
                 sat_velocity.append(v)
@@ -106,20 +99,34 @@ class Reentry_analysis:
                 altitudes.append(r_norm - 6378)
                 
                 reentry_flag = False
+
+                velocity = np.linalg.norm(v)
             else:
                 print(f"SGP4 error code {e} at t = {t} min")
                 print("Switching to reentry integration (solve_ivp)...")
 
                 # Perform reentry trajectory integration using IVP
-                t_reentry, y_reentry = self.reentry_calculation(r, v, t_span=(t, minutes))
+                t_reentry, y_reentry = self.reentry_calculation(r, v)
 
                 for x, y, z, vx, vy, vz in y_reentry:
+                    altitude = (np.linalg.norm([x, y, z]) - 6378) >= 0
+                    if altitude <= 0:
+                        break  
                     sat_positions.append([x, y, z])
                     sat_velocity.append([vx, vy, vz])
-                    altitudes.append(np.linalg.norm([x, y, z]) - 6378)               
+                    altitudes.append(altitude)
                 break
 
-        return np.array(sat_positions), np.array(sat_velocity), altitudes
+        altitudes = set(altitudes)
+        altitudes = np.array(altitudes)
+
+        sat_positions = set(sat_positions)
+        sat_positions = np.array(sat_positions)
+
+        sat_velocity = set(sat_velocity)
+        sat_velocity = np.array(sat_velocity)
+
+        return sat_positions, sat_velocity, altitudes
                 
     def reentry_ivp(self, t, y, diameter):
        
@@ -134,7 +141,10 @@ class Reentry_analysis:
         a_g = -self.Mu * r / (r_norm**3)
 
         Bstar_drag, Ballistic_coef = self.atmospheric_geo_drag(
-            diameter=diameter, rho_body=self.rho_body, altitude=altitude
+            diameter=diameter,
+            rho_body=self.rho_body,
+            altitude=altitude,
+            velocity=np.linalg.norm(v)   # km/s
         )
 
         wEarth = np.array([0, 0, 7.2921159*1e-5])
@@ -151,9 +161,14 @@ class Reentry_analysis:
 
         r_norm = np.linalg.norm(y[:3])  # km
 
-        altitude = r_norm - 6378.0       # km above Earth's mean radius
+        altitude = r_norm - 6378.0  # km above Earth's mean radius
 
-        return altitude                  # stop at 0 km altitude
+        if altitude > 0:
+
+            return altitude   # stop at 0 km altitude
+        
+        else:
+            return -1
     
     def get_reentry_event(self):
         
@@ -166,10 +181,10 @@ class Reentry_analysis:
 
         return event
 
-    def reentry_calculation(self, r0, v0, t_span):
-        
-        t_span = (t_span[0], t_span[-1])
+    def reentry_calculation(self, r0, v0):
 
+        t_span = (0, 2)
+        
         y0 = np.hstack((r0, v0))
 
         sol = solve_ivp(
@@ -177,7 +192,8 @@ class Reentry_analysis:
             t_span=t_span,
             y0=y0,
             method="RK45",
-            max_step=1,
+            first_step=0.01,
+            max_step=0.1,
             events=self.get_reentry_event(),
             rtol=1e-4,
             atol=1e-4
@@ -300,7 +316,7 @@ class Reentry_analysis:
     
         return r1, v1
     
-    def write_tle_from_elements(self, satnum, elements, diameter):
+    def write_tle_from_elements(self, satnum, elements, diameter, velocity):
         
         mean_motion_revs_per_day = elements["mean_motion"] / 360.0
     
@@ -319,7 +335,7 @@ class Reentry_analysis:
 
         altitude_km = elements['semi_major_axis'] - 6378.0  
 
-        Bstar, Ballistic = self.atmospheric_geo_drag(diameter, self.rho_body, altitude_km)
+        Bstar, Ballistic = self.atmospheric_geo_drag(diameter, self.rho_body, altitude_km, velocity)
 
         bstar_str = f"{Bstar:.5e}".replace("e", "").replace("+", "").zfill(8)
 
@@ -344,7 +360,7 @@ class Reentry_analysis:
 
         return tle_line1, tle_line2
 
-    def atmospheric_geo_drag(self, diameter, rho_body, altitude):
+    def atmospheric_geo_drag(self, diameter, rho_body, altitude, velocity):
         
         radius = diameter/2
 
@@ -357,7 +373,19 @@ class Reentry_analysis:
         self.mass = mass
         self.volume = volume
 
-        Cd = 0.7
+        M = 0
+
+        if velocity == 0:
+            Cd = 0.7
+        else:
+            M = self.compute_mach(altitude, velocity)
+
+            if M <= 0.722:
+
+                Cd = 0.45*M**2 + 0.424
+            
+            else:
+                Cd = 2.1*np.exp(-1.2*(M+0.35)) - 8.9*np.exp(-2.2*(M+0.35)) + 0.92
 
         Balllistic_coef = mass / (Cd*Area)
 
@@ -367,23 +395,29 @@ class Reentry_analysis:
 
         return Bstar_drag, Balllistic_coef
     
-    def sutton_graves_heat_flux(self, altitude, velocity, nose_radius):
+    def compute_mach(self, altitude_km, v):
 
-        k = 1.83e-4  # Sutton-Graves constant for Earth [SI units]
-        
-        rho = self.rho0 * np.exp(-altitude/self.H) # Convert km -> m
+        # Example: simplified lookup for speed of sound (m/s)
+        # Replace with interpolation from table
 
-        velocity_m = velocity * 1e3 # Convert km/s -> m/s
+        if altitude_km < 11:
+            a = 340.0   # sea level
+        elif altitude_km < 20:
+            a = 295.0
+        elif altitude_km < 32:
+            a = 303.0
+        elif altitude_km < 47:
+            a = 330.0
+        elif altitude_km < 51:
+            a = 340.0
+        elif altitude_km < 71:
+            a = 355.0
+        else:
+            a = 270.0   # ~80 km
 
-        q_dot = k * np.sqrt(rho / nose_radius) * velocity_m**3
+        M = v * 1000.0
+        return M / a
 
-        return q_dot
-    
-    def changing_temperature_air(self, alt, v):
-
-        q_dot = self.sutton_graves_heat_flux( self, alt, v, self.diameter/2 )
-
-        return 
 
 # ------------------------------
 # Usage
@@ -410,7 +444,7 @@ print("v [km/s] =", ve)
 
 orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, re, ve)
 
-'''
+
 tle1 = "1 13343U 82092A   82348.50000000  .00035000  00000-0  12000-3 0  9991"
 tle2 = "2 13343  65.0000 150.0000 0005000   0.0000  90.0000 16.00000000    01"
 
@@ -425,14 +459,14 @@ jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
               epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
 
 e, r, v = satellite.sgp4(jd, fr)
-'''
 
-r = [6378 + 10, 6378 + 10, 0] # km
-v = [1, 7.25, -0.5] # Km/s
+
+#r = [6378 + 500, 0, 0]  # km
+#v = [5, 7.25, 0]        # Km/s
 
 orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, r, v)
 
-step = 10
+step = 0.25
 duration = 63933.0 * 10
 sat_pos, sat_vel, altitudes = class1.propagate_TLE(minutes=duration, 
                                             orbit_dict=orbit_dict_earth, 
@@ -463,7 +497,11 @@ plt.figure(figsize=(10, 5))
 
 times = np.arange(0, len(altitudes))
 
-plt.plot( np.arange(0, len(sat_vel)) , class1.mass*np.linalg.norm(sat_vel)**2/2)
+vel_norms = np.linalg.norm(sat_vel, axis=1)   # velocity magnitude at each step
+print(f"Mean velocity: {np.mean(vel_norms)} km/s")
+kinetic_energy = 0.5 * class1.mass * (vel_norms)**2
+
+plt.plot( np.arange(0, len(sat_vel)) , kinetic_energy)
 plt.axhline(80, color='red', linestyle='--', label="Reentry limit")
 plt.title(f"Altitude decay over {times[-1]/43800} months")
 plt.xlabel("Time [min]")
