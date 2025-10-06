@@ -1,13 +1,38 @@
-# core/crater_model.py
 import math
 from clients.usgs_client import USGSClient
+from enum import Enum
+
+class AsteroidDensity(Enum):
+    """Esta enumeração representa as estações do ano."""
+    AVERAGE_ICE = 1000
+    AVERAGE_POROUS_ROCK = 1500
+    AVERAGE_DENSE_ROCK = 3000
+    AVERAGE_IRON = 8000
 
 class AsteroidEstimations:
     """
     Estimativas relacionadas ao impacto de asteroides.
     """
 # física do impacto 
-    def estimate_impact_energy(self, diameter_m, velocity_kms, density=3000):
+    def estimate_crater_size(self, energy_megatons: float):
+        """
+        Estima o diâmetro e profundidade da cratera com base na energia.
+        Fórmula aproximada derivada do Earth Impact Effects Program.
+        """
+        diameter_km = 1.161 * (energy_megatons ** 0.294)
+        depth_km = 0.2 * diameter_km
+        return diameter_km, depth_km
+
+    def estimate_earthquake_magnitude(self, energy_megatons: float):
+        """
+        Converte energia de impacto em magnitude sísmica equivalente (Mw).
+        """
+        energy_joules = energy_megatons * 4.184e15
+        seismic_energy = energy_joules * 10**-4
+        magnitude = (2/3) * (math.log10(seismic_energy) - 4.8)
+        return magnitude
+
+    def estimate_impact_energy(self, diameter_m: float, velocity_kms, density: float = float(AsteroidDensity.AVERAGE_DENSE_ROCK.value)):
         """
         Calcula a energia de impacto de um asteroide (em megatons de TNT).
         - diameter_m: diâmetro médio do asteroide [m]
@@ -25,7 +50,7 @@ class AsteroidEstimations:
             "mass_kg": mass, "energy_megatons": energy_megatons,"energy_joules": energy_joules
         }
     
-    def estimate_crater_size(self, energy_megatons: float):
+    def estimate_crater_area(self, energy_megatons: float):
         """
         Estima o diâmetro e profundidade da cratera com base na energia.
         Fórmula aproximada derivada do Earth Impact Effects Program.
@@ -35,17 +60,8 @@ class AsteroidEstimations:
         cratera_area_km2 = diameter_km * depth_km
         return cratera_area_km2
 
-    def estimate_earthquake_magnitude(self, energy_megatons: float):
-        """
-        Converte energia de impacto em magnitude sísmica equivalente (Mw).
-        """
-        energy_joules = energy_megatons * 4.184e15
-        seismic_energy = energy_joules * 10**-4
-        magnitude = (2/3) * (math.log10(seismic_energy) - 4.8)
-        return magnitude
-
 # checar oceano ou terra
-    def is_ocean_or_land(lat: float, lon: float):
+    def is_ocean_or_land(self, lat: float, lon: float):
         """
         Uses USGS elevation data to determine whether the point is on land or ocean.
         Returns:
