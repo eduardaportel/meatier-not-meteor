@@ -14,8 +14,15 @@ import json
 PI = np.pi
 
 class Reentry_analysis:
+    """
+    Class to simulate reentry trajectories of NEOs or satellites
+    using simplified SGP4 propagation + atmospheric drag modeling.
+    """
     
     def __init__(self):
+        """
+        Initialize Earth/WGS-84 parameters and default object properties.
+        """
         self.e2 = 0.00669437999014
         self.a = 6378137.0     # WGS84 semi-major axis [m]
         self.b = 6356752.3142  # WGS84 semi-minor axis [m]
@@ -28,7 +35,10 @@ class Reentry_analysis:
         self.volume = 0
 
     def readData_from_json_NEO(self, path):
-       
+        """
+        Load NEO data from JSON file.
+        Returns: name, orbital elements dict, diameter dict.
+        """
         with open(path, "r") as file:
        
             data = json.load(file)  
@@ -37,10 +47,16 @@ class Reentry_analysis:
        
         diameter_dict = data["estimated_diameter"]["meters"]
        
-        return orbital_dict, diameter_dict
+        name = data["name"]
+
+        return name, orbital_dict, diameter_dict
     
     def earth_WGS84_ECEF(self):
-       
+        """
+        Compute Earth ellipsoid mesh (ECEF coordinates in km)
+        for plotting purposes using WGS-84.
+        Returns: X, Y, Z meshgrids.
+        """
         phi = np.linspace(-PI/2, PI/2, 200)   # latitude
         lam = np.linspace(-PI, PI, 200)       # longitude
         phi, lam = np.meshgrid(phi, lam)
@@ -55,7 +71,15 @@ class Reentry_analysis:
         return X, Y, Z
 
     def propagate_TLE(self, minutes, orbit_dict, step):
-       
+        """
+        Propagate satellite orbit using TLE format + SGP4.
+        Stops when altitude < 80 km (reentry).
+        Args:
+            minutes: total propagation duration [min]
+            orbit_dict: orbital elements
+            step: propagation step size [min]
+        Returns: positions [km], velocities [km/s], altitudes [km]
+        """
         sat_positions = []
         sat_velocity = []
         altitudes = []
@@ -98,11 +122,10 @@ class Reentry_analysis:
                 
                 altitudes.append(r_norm - 6378)
                 
-                reentry_flag = False
-
                 velocity = np.linalg.norm(v)
             else:
                 print(f"SGP4 error code {e} at t = {t} min")
+                '''
                 print("Switching to reentry integration (solve_ivp)...")
 
                 # Perform reentry trajectory integration using IVP
@@ -115,94 +138,24 @@ class Reentry_analysis:
                     sat_positions.append([x, y, z])
                     sat_velocity.append([vx, vy, vz])
                     altitudes.append(altitude)
+                ''' 
                 break
 
-        altitudes = set(altitudes)
         altitudes = np.array(altitudes)
-
-        sat_positions = set(sat_positions)
         sat_positions = np.array(sat_positions)
-
-        sat_velocity = set(sat_velocity)
         sat_velocity = np.array(sat_velocity)
 
         return sat_positions, sat_velocity, altitudes
                 
-    def reentry_ivp(self, t, y, diameter):
-       
-        r = y[:3]   # km
-        v = y[3:]   # km/s
-
-        r = np.array(r)
-        v = np.array(v)
-        r_norm = np.linalg.norm(r)
-
-        altitude = r_norm - 6378
-        a_g = -self.Mu * r / (r_norm**3)
-
-        Bstar_drag, Ballistic_coef = self.atmospheric_geo_drag(
-            diameter=diameter,
-            rho_body=self.rho_body,
-            altitude=altitude,
-            velocity=np.linalg.norm(v)   # km/s
-        )
-
-        wEarth = np.array([0, 0, 7.2921159*1e-5])
-        vrel = np.array(v - np.cross(wEarth, r))
-        vrel_norm = np.linalg.norm(vrel)
-
-        a_drag = -0.5 * Bstar_drag * vrel_norm * vrel      
-        a_reentry = a_g + a_drag
-        v_reentry = v
-
-        return np.hstack((v_reentry, a_reentry))
-
-    def reentry_trigger(self, t, y):
-
-        r_norm = np.linalg.norm(y[:3])  # km
-
-        altitude = r_norm - 6378.0  # km above Earth's mean radius
-
-        if altitude > 0:
-
-            return altitude   # stop at 0 km altitude
-        
-        else:
-            return -1
-    
-    def get_reentry_event(self):
-        
-        def event(t, y):
-            return self.reentry_trigger(t, y)
-
-        event.terminal = True
-
-        event.direction = -1
-
-        return event
-
-    def reentry_calculation(self, r0, v0):
-
-        t_span = (0, 2)
-        
-        y0 = np.hstack((r0, v0))
-
-        sol = solve_ivp(
-            fun=lambda t, y: self.reentry_ivp(t, y, self.diameter),
-            t_span=t_span,
-            y0=y0,
-            method="RK45",
-            first_step=0.01,
-            max_step=0.1,
-            events=self.get_reentry_event(),
-            rtol=1e-4,
-            atol=1e-4
-        )
-        
-        return sol.t, sol.y.T
     
     def keplerian_to_RV(self, body, orbital_dict):
-        
+        """
+        Convert classical Keplerian orbital elements → position/velocity vectors.
+        Args:
+            body: reference central body (Earth or Sun)
+            orbital_dict: dict with orbital elements
+        Returns: epoch [Time], r [km], v [km/s]
+        """
         epoch = Time(orbital_dict["orbit_determination_date"], scale="tdb")
         
         ecc   = float(orbital_dict["eccentricity"])
@@ -233,7 +186,16 @@ class Reentry_analysis:
         return epoch, r.to_value(u.km), v.to_value(u.km / u.s)
     
     def RV_to_keplerian(self, body, epoch, r, v):
-        
+        """
+        Convert position/velocity vectors → Keplerian elements.
+        Args:
+            body: central body
+            epoch: epoch of state
+            r: position vector [km]
+            v: velocity vector [km/s]
+        Returns: orbital elements dict
+        """
+
         orb = Orbit.from_vectors(body, r * u.km, v * u.km/u.s, epoch=epoch)
         
         a    = orb.a.to(u.AU).value
@@ -286,6 +248,11 @@ class Reentry_analysis:
         return orbit_dict
     
     def relative_reference_frame(self, body1, body2, epoch):
+        """
+        Compute relative state (r,v) of body1 w.r.t. body2 at given epoch.
+        Useful for switching from heliocentric to geocentric frame.
+        Returns: r_rel [km], v_rel [km/s]
+        """
         
         eph1 = Ephem.from_body(body1, epoch)
         
@@ -305,6 +272,13 @@ class Reentry_analysis:
         return r_rel, v_rel
     
     def change_reference_frame(self, rel_state_vector, state_vector2):
+        """
+        Change reference frame using relative and absolute vectors.
+        Args:
+            rel_state_vector: (r_rel, v_rel)
+            state_vector2: (r2, v2)
+        Returns: new (r1, v1) in km and km/s
+        """
         
         r_rel, v_rel = rel_state_vector
     
@@ -317,6 +291,15 @@ class Reentry_analysis:
         return r1, v1
     
     def write_tle_from_elements(self, satnum, elements, diameter, velocity):
+        """
+        Construct TLE lines from orbital elements + drag term (Bstar).
+        Args:
+            satnum: satellite number
+            elements: orbital dict
+            diameter: body diameter [m]
+            velocity: body velocity magnitude [km/s]
+        Returns: tle_line1, tle_line2
+        """
         
         mean_motion_revs_per_day = elements["mean_motion"] / 360.0
     
@@ -361,6 +344,16 @@ class Reentry_analysis:
         return tle_line1, tle_line2
 
     def atmospheric_geo_drag(self, diameter, rho_body, altitude, velocity):
+        """
+        Estimate ballistic coefficient and drag factor Bstar
+        using exponential atmosphere model.
+        Args:
+            diameter: body diameter [m]
+            rho_body: density of body [kg/m^3]
+            altitude: altitude above Earth [km]
+            velocity: velocity magnitude [km/s]
+        Returns: Bstar_drag, Ballistic_coef
+        """
         
         radius = diameter/2
 
@@ -396,6 +389,14 @@ class Reentry_analysis:
         return Bstar_drag, Balllistic_coef
     
     def compute_mach(self, altitude_km, v):
+        """
+        Compute Mach number at given altitude using simplified
+        piecewise sound speed model.
+        Args:
+            altitude_km: altitude [km]
+            v: velocity [km/s]
+        Returns: Mach number
+        """
 
         # Example: simplified lookup for speed of sound (m/s)
         # Replace with interpolation from table
@@ -417,95 +418,164 @@ class Reentry_analysis:
 
         M = v * 1000.0
         return M / a
+    
+    def ecef_to_geodetic(self, x, y, z, a=6378.137, b=6356.7523142):
+        """
+        Convert ECEF (km) to geodetic latitude, longitude, altitude (WGS-84).
+        Returns: lat [deg], lon [deg], alt [km]
+        """
+
+        f = (a - b) / a
+        e2 = f * (2 - f)
+
+        lon = np.arctan2(y, x)
+        r = np.sqrt(x**2 + y**2)
+
+        # initial guess for latitude
+        lat = np.arctan2(z, r * (1 - e2))
+        alt = 0.0
+
+        # iterate to improve latitude/altitude
+        for _ in range(5):
+            N = a / np.sqrt(1 - e2 * np.sin(lat)**2)
+            alt = r / np.cos(lat) - N
+            lat = np.arctan2(z + e2 * N * np.sin(lat), r)
+
+        lat = np.degrees(lat)
+        lon = np.degrees(lon)
+
+        return lat, lon, alt
 
 
-# ------------------------------
-# Usage
-# ------------------------------
-class1 = Reentry_analysis()
 
-path = "C:\\Users\\Claudio Manuel\\Desktop\\prog\\linguagens\\python\\satellite\\NASA\\meatier-not-meteor\\simulations\\orbits.json"
+    '''
+    def reentry_calculation(self, r0, v0):
 
-X, Y, Z = class1.earth_WGS84_ECEF()
+        t_span = (0, 2)
+        
+        y0 = np.hstack((r0, v0))
 
-orbit_dict, dia_dict = class1.readData_from_json_NEO(path)
+        sol = solve_ivp(
+            fun=lambda t, y: self.reentry_ivp(t, y, self.diameter),
+            t_span=t_span,
+            y0=y0,
+            method="RK45",
+            first_step=0.01,
+            max_step=0.1,
+            events=self.get_reentry_event(),
+            rtol=1e-4,
+            atol=1e-4
+        )
+        
+        return sol.t, sol.y.T
 
-class1.diameter = dia_dict["estimated_diameter_max"]
+    def reentry_ivp(self, t, y, diameter):
+       
+        r = y[:3]   # km
+        v = y[3:]   # km/s
 
-epoch, rs, vs = class1.keplerian_to_RV(Sun, orbit_dict)
+        r = np.array(r)
+        v = np.array(v)
+        r_norm = np.linalg.norm(r)
 
-r_rel, v_rel = class1.relative_reference_frame(Sun, Earth, epoch)
+        altitude = r_norm - 6378
+        a_g = -self.Mu * r / (r_norm**3)
 
-re, ve = class1.change_reference_frame((r_rel, v_rel), (rs, vs))
+        Bstar_drag, Ballistic_coef = self.atmospheric_geo_drag(
+            diameter=diameter,
+            rho_body=self.rho_body,
+            altitude=altitude,
+            velocity=np.linalg.norm(v)   # km/s
+        )
 
-print("Transformed state vector wrt Earth:")
-print("r [km] =", re)
-print("v [km/s] =", ve)
+        wEarth = np.array([0, 0, 7.2921159*1e-5])
+        vrel = np.array(v - np.cross(wEarth, r))
+        vrel_norm = np.linalg.norm(vrel)
 
-orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, re, ve)
+        a_drag = -0.5 * Bstar_drag * vrel_norm * vrel      
+        a_reentry = a_g + a_drag
+        v_reentry = v
 
+        return np.hstack((v_reentry, a_reentry))
 
-tle1 = "1 13343U 82092A   82348.50000000  .00035000  00000-0  12000-3 0  9991"
-tle2 = "2 13343  65.0000 150.0000 0005000   0.0000  90.0000 16.00000000    01"
+    def reentry_trigger(self, t, y):
 
-satellite = Satrec.twoline2rv(tle1, tle2)
-tle_epoch_str = tle1[18:32].strip()
-year_short = int(tle_epoch_str[:2])
-doy = float(tle_epoch_str[2:])
-year_full = 2000 + year_short if year_short < 57 else 1900 + year_short
-epoch_datetime = datetime(year_full, 1, 1) + timedelta(days=doy - 1)
+        r_norm = np.linalg.norm(y[:3])  # km
 
-jd, fr = jday(epoch_datetime.year, epoch_datetime.month, epoch_datetime.day,
-              epoch_datetime.hour, epoch_datetime.minute, epoch_datetime.second)
+        altitude = r_norm - 6378.0  # km above Earth's mean radius
 
-e, r, v = satellite.sgp4(jd, fr)
+        if altitude > 0:
 
+            return altitude   # stop at 0 km altitude
+        
+        else:
+            return -1
+    
+    def get_reentry_event(self):
+        
+        def event(t, y):
+            return self.reentry_trigger(t, y)
 
-#r = [6378 + 500, 0, 0]  # km
-#v = [5, 7.25, 0]        # Km/s
+        event.terminal = True
 
-orbit_dict_earth = class1.RV_to_keplerian(Earth, epoch, r, v)
+        event.direction = -1
 
-step = 0.25
-duration = 63933.0 * 10
-sat_pos, sat_vel, altitudes = class1.propagate_TLE(minutes=duration, 
-                                            orbit_dict=orbit_dict_earth, 
-                                            step=step)
+        return event
+    '''
 
-fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(8,8))
-ax.plot_surface(X, Y, Z, rstride=5, cstride=5, color='blue', alpha=0.4, linewidth=0)
-ax.scatter(sat_pos[0,0], sat_pos[0,1], sat_pos[0,2], 'g', label="Starting point")
-ax.scatter(sat_pos[-1,0], sat_pos[-1,1], sat_pos[-1,2], 'o', label="Ending point")
-ax.plot(sat_pos[:,0], sat_pos[:,1], sat_pos[:,2], 'r', label="Orbit")
-ax.set_xlabel("X [m]"); ax.set_ylabel("Y [m]"); ax.set_zlabel("Z [m]")
-ax.set_title("SGP4 Orbit around WGS-84 Earth")
-ax.legend()
-plt.show()
+if __name__ == "__main__":
+    
+    EnvSimulation = Reentry_analysis()
 
-plt.figure(figsize=(10, 5))
-times = np.arange(0, len(altitudes))
-plt.plot(times, altitudes)
-plt.axhline(80, color='red', linestyle='--', label="Reentry limit")
-plt.title(f"Altitude decay over {times[-1]/43800} months")
-plt.xlabel("Time [min]")
-plt.ylabel("Altitude [km]")
-plt.grid(True)
-plt.legend()
-plt.show()
+    path = ".\\orbits.json"
 
-plt.figure(figsize=(10, 5))
+    name, orbit_dict, dia_dict = EnvSimulation.readData_from_json_NEO(path)
 
-times = np.arange(0, len(altitudes))
+    EnvSimulation.diameter = dia_dict["estimated_diameter_max"]
 
-vel_norms = np.linalg.norm(sat_vel, axis=1)   # velocity magnitude at each step
-print(f"Mean velocity: {np.mean(vel_norms)} km/s")
-kinetic_energy = 0.5 * class1.mass * (vel_norms)**2
+    epoch, rs, vs = EnvSimulation.keplerian_to_RV(Sun, orbit_dict)
 
-plt.plot( np.arange(0, len(sat_vel)) , kinetic_energy)
-plt.axhline(80, color='red', linestyle='--', label="Reentry limit")
-plt.title(f"Altitude decay over {times[-1]/43800} months")
-plt.xlabel("Time [min]")
-plt.ylabel("Altitude [km]")
-plt.grid(True)
-plt.legend()
-plt.show()
+    r_rel, v_rel = EnvSimulation.relative_reference_frame(Sun, Earth, epoch)
+
+    re, ve = EnvSimulation.change_reference_frame((r_rel, v_rel), (rs, vs))
+
+    orbit_dict_earth = EnvSimulation.RV_to_keplerian(Earth, epoch, re, ve)
+
+    step = 1000
+    duration = 52560000
+    sat_pos, sat_vel, altitudes = EnvSimulation.propagate_TLE(minutes=duration, 
+                                                orbit_dict=orbit_dict_earth, 
+                                                step=step)
+
+    lat, lon, alt = EnvSimulation.ecef_to_geodetic(sat_pos[-1, 0], sat_pos[-1, 1], sat_pos[-1, 2])
+
+    vx, vy, vz = sat_vel[-1, 0], sat_vel[-1, 1], sat_vel[-1, 2]
+    print(f"Final positon: lat, lon, alt: {[lat, lon, alt]}")
+    print(f"Final velocity: vx, vy, vz: {[vx, vy, vz]}")
+
+    results = {
+        'name':name,
+        '2Dresults' : {
+            'lat': lat,
+            'lon': lon,
+            'alt': alt,
+            'vx': vx,
+            'vy': vy,
+            'vz': vz,
+            'v_norm': np.linalg.norm( [vx, vy, vz] ),
+            'mass': EnvSimulation.mass,
+            'volume': EnvSimulation.volume,
+            'diameter': dia_dict["estimated_diameter_max"]
+        },
+        '3Dresults' : {
+            'rs_x': rs[0],
+            'rs_y': rs[1],
+            'rs_z': rs[2],
+            'vs_x': vs[0],
+            'vs_y': vs[1],
+            'vs_z': vs[2]
+        } 
+    }
+    # Write JSON file
+    with open("results_2D_and_3D.json", "w") as f:
+        json.dump(results, f, indent=4)
